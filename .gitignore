@@ -53,3 +53,17 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Local build output
+codex_obj/
+
+# Keil MDK generated files and local backups
+Objects/
+Listings/
+keil_user_backup_*/
+*.axf
+*.dep
+*.lnp
+*.build_log.htm
+*.uvoptx
+*.uvguix.*
