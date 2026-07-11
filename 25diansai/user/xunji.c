@@ -3,16 +3,18 @@
 #define LINE_BASE_PWM      1700
 #define LINE_KP            10
 #define LINE_KD            30
-#define LINE_PWM_LIMIT     3200
+#define LINE_PWM_LIMIT     2000
 #define LINE_CROSS_COUNT   5
 #define TURN_BASE_SPEED    22
 #define LINE_TURN_SLOW_ERROR   20
 #define LINE_TURN_BASE_PWM     2200
 #define LINE_SHARP_ERROR       30
-#define LINE_SHARP_PWM         3400
+#define LINE_SHARP_PWM         LINE_PWM_LIMIT
 #define LINE_SHARP_LOST_PWM    3200
 #define LINE_SHARP_BRAKE_TICKS 6
 #define LINE_SHARP_EXIT_TICKS  3
+#define LINE_CROSS_CONFIRM_TICKS 3
+#define LINE_CROSS_RELEASE_TICKS 3
 #define LINE_SEARCH_OUTER_PWM  3200
 #define LINE_SEARCH_INNER_PWM  600
 #define LINE_RAMP_STEP      420
@@ -32,6 +34,10 @@ static int s_line_last_valid_error = 0;
 static int s_line_sharp_state = 0;
 static uint8_t s_line_sharp_brake_ticks = 0;
 static uint8_t s_line_sharp_exit_ticks = 0;
+static uint8_t s_line_derivative_valid = 0;
+static uint8_t s_line_cross_high_ticks = 0;
+static uint8_t s_line_cross_low_ticks = 0;
+static uint8_t s_line_cross_latched = 0;
 
 uint8_t xunji_raw_bits(void)
 {
@@ -92,6 +98,10 @@ void xunji_runtime_reset(void)
     s_line_sharp_state = 0;
     s_line_sharp_brake_ticks = 0;
     s_line_sharp_exit_ticks = 0;
+    s_line_derivative_valid = 0;
+    s_line_cross_high_ticks = 0;
+    s_line_cross_low_ticks = 0;
+    s_line_cross_latched = 0;
 }
 
 unsigned char digtal(unsigned char channel)
@@ -262,6 +272,7 @@ static void line_pwm_control(void)
         if(count == 0)
         {
             s_line_sharp_exit_ticks = 0;
+            s_line_derivative_valid = 0;
             line_sharp_turn_control(LINE_SHARP_LOST_PWM);
             return;
         }
@@ -295,6 +306,7 @@ static void line_pwm_control(void)
 
     if(count == 0)
     {
+        s_line_derivative_valid = 0;
         line_search_control();
         return;
     }
@@ -322,7 +334,17 @@ static void line_pwm_control(void)
         return;
     }
 
-    diff = clamp_int(error - s_line_last_valid_error, -LINE_DIFF_LIMIT, LINE_DIFF_LIMIT);
+    if(s_line_derivative_valid == 0)
+    {
+        diff = 0;
+        s_line_derivative_valid = 1;
+    }
+    else
+    {
+        diff = clamp_int(error - s_line_last_valid_error,
+                         -LINE_DIFF_LIMIT,
+                         LINE_DIFF_LIMIT);
+    }
     s_line_last_valid_error = error;
     base = (error > LINE_TURN_SLOW_ERROR || error < -LINE_TURN_SLOW_ERROR) ? LINE_TURN_BASE_PWM : LINE_BASE_PWM;
     corr = clamp_int(error * LINE_KP + diff * LINE_KD, -LINE_PWM_LIMIT, LINE_PWM_LIMIT);
@@ -331,13 +353,44 @@ static void line_pwm_control(void)
 
 static void update_cross_count(void)
 {
-    now_statue = (sensor_count_bits(xunji_line_bits()) >= LINE_CROSS_COUNT) ? 1 : 0;
+    uint8_t cross_detected =
+        (sensor_count_bits(xunji_line_bits()) >= LINE_CROSS_COUNT) ? 1 : 0;
 
-    if(now_statue && !last_statue)
+    if(cross_detected)
     {
-        change_flag1++;
+        s_line_cross_low_ticks = 0;
+        if(s_line_cross_latched == 0)
+        {
+            if(s_line_cross_high_ticks < LINE_CROSS_CONFIRM_TICKS)
+            {
+                s_line_cross_high_ticks++;
+            }
+
+            if(s_line_cross_high_ticks >= LINE_CROSS_CONFIRM_TICKS)
+            {
+                s_line_cross_latched = 1;
+                change_flag1++;
+            }
+        }
+    }
+    else
+    {
+        s_line_cross_high_ticks = 0;
+        if(s_line_cross_latched)
+        {
+            if(s_line_cross_low_ticks < LINE_CROSS_RELEASE_TICKS)
+            {
+                s_line_cross_low_ticks++;
+            }
+
+            if(s_line_cross_low_ticks >= LINE_CROSS_RELEASE_TICKS)
+            {
+                s_line_cross_latched = 0;
+            }
+        }
     }
 
+    now_statue = s_line_cross_latched;
     last_statue = now_statue;
 }
 
