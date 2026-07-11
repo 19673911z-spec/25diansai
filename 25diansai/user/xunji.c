@@ -1,23 +1,26 @@
 #include "headfile.h"
 
-#define LINE_BASE_PWM      1500
-#define LINE_KP            28
-#define LINE_KD            4
-#define LINE_PWM_LIMIT     2600
+#define LINE_BASE_PWM      2000
+#define LINE_LOAD_PWM_BOOST 2000
+#define LINE_KP            60
+#define LINE_KD            15
+#define LINE_PWM_LIMIT     8000
 #define LINE_CROSS_COUNT   5
 #define TURN_BASE_SPEED    22
-#define LINE_TURN_SLOW_ERROR   20
-#define LINE_TURN_BASE_PWM     1100
-#define LINE_SHARP_ERROR       30
-#define LINE_SHARP_PWM         1750
-#define LINE_SHARP_LOST_PWM    2050
+#define LINE_TURN_SLOW_ERROR   8
+#define LINE_TURN_BASE_PWM     200
+#define LINE_TURN_INNER_PERCENT 55
+#define LINE_SHARP_ERROR       25
+#define LINE_SHARP_PWM         4500
+#define LINE_SHARP_LOST_PWM    5200
 #define LINE_SHARP_BRAKE_TICKS 2
 #define LINE_SHARP_EXIT_TICKS  2
 #define LINE_CROSS_CONFIRM_TICKS 3
 #define LINE_CROSS_RELEASE_TICKS 3
-#define LINE_SEARCH_OUTER_PWM  1200
-#define LINE_SEARCH_INNER_PWM  350
-#define LINE_RAMP_STEP      100
+#define LINE_SEARCH_OUTER_PWM  4200
+#define LINE_SEARCH_INNER_PWM  1000
+#define LINE_ACCEL_RAMP_STEP 300
+#define LINE_BRAKE_RAMP_STEP 700
 #define LINE_DIFF_LIMIT     8
 #define LINE_ERROR_FILTER_NUM  3
 #define LINE_BLACK_GPIO_LEVEL  0
@@ -153,8 +156,8 @@ static uint8_t line_center_seen_bits(uint8_t bits)
 
 static int ramp_to_target(int now, int target)
 {
-    if(now < target - LINE_RAMP_STEP) return now + LINE_RAMP_STEP;
-    if(now > target + LINE_RAMP_STEP) return now - LINE_RAMP_STEP;
+    if(now < target - LINE_ACCEL_RAMP_STEP) return now + LINE_ACCEL_RAMP_STEP;
+    if(now > target + LINE_BRAKE_RAMP_STEP) return now - LINE_BRAKE_RAMP_STEP;
     return target;
 }
 
@@ -282,6 +285,9 @@ static void line_pwm_control(void)
     int base;
     int corr;
     int diff;
+    int left_target;
+    int right_target;
+    uint8_t turning;
 
     if(s_line_sharp_state != 0)
     {
@@ -376,9 +382,26 @@ static void line_pwm_control(void)
                          LINE_DIFF_LIMIT);
     }
     s_line_last_valid_error = error;
-    base = (error > LINE_TURN_SLOW_ERROR || error < -LINE_TURN_SLOW_ERROR) ? LINE_TURN_BASE_PWM : LINE_BASE_PWM;
+    turning = (raw_error > LINE_TURN_SLOW_ERROR || raw_error < -LINE_TURN_SLOW_ERROR) ? 1 : 0;
+    base = turning ? LINE_TURN_BASE_PWM : LINE_BASE_PWM;
+    base += LINE_LOAD_PWM_BOOST;
     corr = clamp_int(error * LINE_KP + diff * LINE_KD, -LINE_PWM_LIMIT, LINE_PWM_LIMIT);
-    line_set_pwm(base + corr, base - corr);
+    left_target = base + corr;
+    right_target = base - corr;
+
+    if(turning)
+    {
+        if(corr > 0)
+        {
+            right_target = right_target * LINE_TURN_INNER_PERCENT / 100;
+        }
+        else if(corr < 0)
+        {
+            left_target = left_target * LINE_TURN_INNER_PERCENT / 100;
+        }
+    }
+
+    line_set_pwm(left_target, right_target);
 }
 
 static void update_cross_count(void)
