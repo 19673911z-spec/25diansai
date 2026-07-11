@@ -29,7 +29,6 @@ void pid_reset_all(void);
 void motor_target_set(int spe1, int spe2);
 void pid_out_limit(pid_t *pid);
 void turn_pid(int base,int target);
-void check(int target);
 extern pid_t motorA;
 extern pid_t motorB;
 extern pid_t angle;

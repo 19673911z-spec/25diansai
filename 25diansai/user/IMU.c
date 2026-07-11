@@ -1,10 +1,13 @@
 #include "headfile.h"
 
 volatile uint8_t imu_flag;
-uint8_t orginal_data;
 double yaw_angle;
 volatile int yaw_angle_int;
 struct Angle YawAngle;
+
+#define IMU_FRAME_LENGTH 11U
+#define IMU_FRAME_HEADER 0x55U
+#define IMU_FRAME_ANGLE  0x53U
 
 void imu_init(void)
 {
@@ -13,27 +16,56 @@ void imu_init(void)
 
 void imu_uart_callback(void)
 {
-    static unsigned char imu_rx_buffer[250];
-    static unsigned char counter = 0;
+    static uint8_t imu_rx_buffer[IMU_FRAME_LENGTH];
+    static uint8_t counter = 0;
+    uint8_t data = uart_getbyte(UART0);
+    uint8_t checksum = 0;
+    uint8_t i;
 
-    orginal_data = uart_getbyte(UART0);
-    imu_rx_buffer[counter++] = orginal_data;
-
-    if(imu_rx_buffer[0] != 0x55)
+    if(counter == 0)
     {
+        if(data == IMU_FRAME_HEADER)
+        {
+            imu_rx_buffer[counter++] = data;
+        }
+        return;
+    }
+
+    imu_rx_buffer[counter++] = data;
+    if(counter < IMU_FRAME_LENGTH)
+    {
+        return;
+    }
+
+    for(i = 0; i < (IMU_FRAME_LENGTH - 1U); i++)
+    {
+        checksum += imu_rx_buffer[i];
+    }
+
+    if((checksum == imu_rx_buffer[IMU_FRAME_LENGTH - 1U]) &&
+       (imu_rx_buffer[1] == IMU_FRAME_ANGLE))
+    {
+        memcpy(&YawAngle, &imu_rx_buffer[2], sizeof(YawAngle));
+        imu_flag = 1;
         counter = 0;
         return;
     }
 
-    if(counter < 11)
+    /* Keep the next frame header after a failed checksum to resynchronize. */
+    for(i = 1; i < IMU_FRAME_LENGTH; i++)
     {
-        return;
-    }
+        if(imu_rx_buffer[i] == IMU_FRAME_HEADER)
+        {
+            uint8_t remaining = IMU_FRAME_LENGTH - i;
+            uint8_t j;
 
-    if(imu_rx_buffer[1] == 0x53)
-    {
-        memcpy(&YawAngle, &imu_rx_buffer[2], 8);
-        imu_flag = 1;
+            for(j = 0; j < remaining; j++)
+            {
+                imu_rx_buffer[j] = imu_rx_buffer[i + j];
+            }
+            counter = remaining;
+            return;
+        }
     }
 
     counter = 0;
@@ -41,6 +73,12 @@ void imu_uart_callback(void)
 
 void imu_analysis(void)
 {
-    yaw_angle = (float)YawAngle.Angle[2] / 32768 * 180;
+    struct Angle sample;
+
+    __disable_irq();
+    sample = YawAngle;
+    __enable_irq();
+
+    yaw_angle = (float)sample.Angle[2] / 32768 * 180;
     yaw_angle_int = (int)yaw_angle;
 }

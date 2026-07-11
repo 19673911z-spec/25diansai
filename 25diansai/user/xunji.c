@@ -1,24 +1,25 @@
 #include "headfile.h"
 
-#define LINE_BASE_PWM      1700
-#define LINE_KP            10
-#define LINE_KD            30
-#define LINE_PWM_LIMIT     2000
+#define LINE_BASE_PWM      1500
+#define LINE_KP            28
+#define LINE_KD            4
+#define LINE_PWM_LIMIT     2600
 #define LINE_CROSS_COUNT   5
 #define TURN_BASE_SPEED    22
 #define LINE_TURN_SLOW_ERROR   20
-#define LINE_TURN_BASE_PWM     2200
+#define LINE_TURN_BASE_PWM     1100
 #define LINE_SHARP_ERROR       30
-#define LINE_SHARP_PWM         LINE_PWM_LIMIT
-#define LINE_SHARP_LOST_PWM    3200
-#define LINE_SHARP_BRAKE_TICKS 6
-#define LINE_SHARP_EXIT_TICKS  3
+#define LINE_SHARP_PWM         1750
+#define LINE_SHARP_LOST_PWM    2050
+#define LINE_SHARP_BRAKE_TICKS 2
+#define LINE_SHARP_EXIT_TICKS  2
 #define LINE_CROSS_CONFIRM_TICKS 3
 #define LINE_CROSS_RELEASE_TICKS 3
-#define LINE_SEARCH_OUTER_PWM  3200
-#define LINE_SEARCH_INNER_PWM  600
-#define LINE_RAMP_STEP      420
-#define LINE_DIFF_LIMIT     12
+#define LINE_SEARCH_OUTER_PWM  1200
+#define LINE_SEARCH_INNER_PWM  350
+#define LINE_RAMP_STEP      100
+#define LINE_DIFF_LIMIT     8
+#define LINE_ERROR_FILTER_NUM  3
 #define LINE_BLACK_GPIO_LEVEL  0
 /* Rear-facing sensor: D1~D8 are mirrored in the vehicle coordinate frame. */
 #define LINE_SENSOR_AT_REAR    1
@@ -38,6 +39,8 @@ static uint8_t s_line_derivative_valid = 0;
 static uint8_t s_line_cross_high_ticks = 0;
 static uint8_t s_line_cross_low_ticks = 0;
 static uint8_t s_line_cross_latched = 0;
+static int s_line_filtered_error = 0;
+static uint8_t s_line_filter_valid = 0;
 
 uint8_t xunji_raw_bits(void)
 {
@@ -102,6 +105,8 @@ void xunji_runtime_reset(void)
     s_line_cross_high_ticks = 0;
     s_line_cross_low_ticks = 0;
     s_line_cross_latched = 0;
+    s_line_filtered_error = 0;
+    s_line_filter_valid = 0;
 }
 
 unsigned char digtal(unsigned char channel)
@@ -251,10 +256,28 @@ static int line_error_bits(uint8_t bits)
     return sum / count;
 }
 
+static int line_filter_error(int raw_error)
+{
+    if(s_line_filter_valid == 0)
+    {
+        s_line_filtered_error = raw_error;
+        s_line_filter_valid = 1;
+    }
+    else
+    {
+        s_line_filtered_error =
+            (s_line_filtered_error * (LINE_ERROR_FILTER_NUM - 1) + raw_error) /
+            LINE_ERROR_FILTER_NUM;
+    }
+
+    return s_line_filtered_error;
+}
+
 static void line_pwm_control(void)
 {
     uint8_t bits = xunji_line_bits();
     int count = sensor_count_bits(bits);
+    int raw_error;
     int error;
     int base;
     int corr;
@@ -277,18 +300,20 @@ static void line_pwm_control(void)
             return;
         }
 
-        error = line_error_bits(bits);
-        s_line_last_error = error;
+        raw_error = line_error_bits(bits);
+        s_line_last_error = raw_error;
         s_line_has_last = 1;
 
-        if(line_center_seen_bits(bits) && abs_int(error) <= LINE_TURN_SLOW_ERROR)
+        if(line_center_seen_bits(bits) && abs_int(raw_error) <= LINE_TURN_SLOW_ERROR)
         {
             s_line_sharp_exit_ticks++;
             if(s_line_sharp_exit_ticks >= LINE_SHARP_EXIT_TICKS)
             {
                 s_line_sharp_state = 0;
                 s_line_sharp_exit_ticks = 0;
-                s_line_last_valid_error = error;
+                s_line_last_valid_error = raw_error;
+                s_line_filtered_error = raw_error;
+                s_line_filter_valid = 1;
             }
             else
             {
@@ -307,32 +332,37 @@ static void line_pwm_control(void)
     if(count == 0)
     {
         s_line_derivative_valid = 0;
+        s_line_filter_valid = 0;
         line_search_control();
         return;
     }
 
-    error = line_error_bits(bits);
-    s_line_last_error = error;
+    raw_error = line_error_bits(bits);
+    s_line_last_error = raw_error;
     s_line_has_last = 1;
 
-    if(error <= -LINE_SHARP_ERROR)
+    if(raw_error <= -LINE_SHARP_ERROR)
     {
         s_line_sharp_state = -1;
         s_line_sharp_brake_ticks = LINE_SHARP_BRAKE_TICKS;
         s_line_sharp_exit_ticks = 0;
-        s_line_last_valid_error = error;
+        s_line_last_valid_error = raw_error;
+        s_line_filter_valid = 0;
         line_brake_control();
         return;
     }
-    else if(error >= LINE_SHARP_ERROR)
+    else if(raw_error >= LINE_SHARP_ERROR)
     {
         s_line_sharp_state = 1;
         s_line_sharp_brake_ticks = LINE_SHARP_BRAKE_TICKS;
         s_line_sharp_exit_ticks = 0;
-        s_line_last_valid_error = error;
+        s_line_last_valid_error = raw_error;
+        s_line_filter_valid = 0;
         line_brake_control();
         return;
     }
+
+    error = line_filter_error(raw_error);
 
     if(s_line_derivative_valid == 0)
     {
@@ -410,7 +440,6 @@ void track2(void)
     }
     else if(change_flag1 >= 2)
     {
-        check(177);
         turn_pid(line_drive_speed(TURN_BASE_SPEED), 177);
     }
     else
@@ -430,7 +459,6 @@ void track3(void)
     }
     else if(change_flag1 >= 2)
     {
-        check(-137);
         turn_pid(line_drive_speed(TURN_BASE_SPEED), -137);
     }
     else
@@ -450,7 +478,6 @@ void track4(void)
     }
     else if(change_flag1 >= 14)
     {
-        check(-142);
         turn_pid(line_drive_speed(TURN_BASE_SPEED), -142);
     }
     else if(change_flag1 >= 12)
@@ -459,7 +486,6 @@ void track4(void)
     }
     else if(change_flag1 >= 10)
     {
-        check(-142);
         turn_pid(line_drive_speed(TURN_BASE_SPEED), -142);
     }
     else if(change_flag1 >= 8)
@@ -468,7 +494,6 @@ void track4(void)
     }
     else if(change_flag1 >= 6)
     {
-        check(-141);
         turn_pid(line_drive_speed(TURN_BASE_SPEED), -141);
     }
     else if(change_flag1 >= 4)
@@ -477,7 +502,6 @@ void track4(void)
     }
     else if(change_flag1 >= 2)
     {
-        check(-138);
         turn_pid(line_drive_speed(TURN_BASE_SPEED), -138);
     }
     else

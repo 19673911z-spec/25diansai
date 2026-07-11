@@ -51,27 +51,27 @@ void GROUP1_IRQHandler(void)
     {
         if(gpio_get(GPIOA, DL_GPIO_PIN_24) == 0) Encoder_count1++;
         else Encoder_count1--;
-        GPIOA->CPU_INT.ICLR |= DL_GPIO_PIN_17;
+        DL_GPIO_clearInterruptStatus(GPIOA, DL_GPIO_PIN_17);
     }
 
     if(GPIOA->CPU_INT.MIS & DL_GPIO_PIN_24)
     {
         if(gpio_get(GPIOA, DL_GPIO_PIN_17) == 0) Encoder_count1++;
         else Encoder_count1--;
-        GPIOA->CPU_INT.ICLR |= DL_GPIO_PIN_24;
+        DL_GPIO_clearInterruptStatus(GPIOA, DL_GPIO_PIN_24);
     }
 
     if(GPIOA->CPU_INT.MIS & DL_GPIO_PIN_15)
     {
         if(gpio_get(GPIOA, DL_GPIO_PIN_16) == 0) Encoder_count2++;
         else Encoder_count2--;
-        GPIOA->CPU_INT.ICLR |= DL_GPIO_PIN_15;
+        DL_GPIO_clearInterruptStatus(GPIOA, DL_GPIO_PIN_15);
     }
 
     if(GPIOA->CPU_INT.MIS & DL_GPIO_PIN_16)
     {
         if(gpio_get(GPIOA, DL_GPIO_PIN_15) == 0) Encoder_count2++;
         else Encoder_count2--;
-        GPIOA->CPU_INT.ICLR |= DL_GPIO_PIN_16;
+        DL_GPIO_clearInterruptStatus(GPIOA, DL_GPIO_PIN_16);
     }
 }

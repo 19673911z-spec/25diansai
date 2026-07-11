@@ -16,6 +16,7 @@ void pid_init(pid_t *pid, uint32_t mode, float p, float i, float d)
 	pid->p = p;
 	pid->i = i;
 	pid->d = d;
+	pid_runtime_reset(pid);
 }
 
 void pid_runtime_reset(pid_t *pid)
@@ -118,25 +119,29 @@ void pid_out_limit(pid_t *pid)
 		pid->out=-MAX_DUTY;
 }
 
-void check(int target)
+static int yaw_error_wrap(int target, int current)
 {
-	 	  if(target<0) 
-	{
-		  if(yaw_angle_int<0) yaw_angle_int=yaw_angle_int;
-		  else yaw_angle_int=yaw_angle_int-360;
-	}
-	else if(target>0)
-	{
-		 if(yaw_angle_int>0) yaw_angle_int=yaw_angle_int;
-		else yaw_angle_int=yaw_angle_int+360;
-	}
+    int error = target - current;
+
+    while(error > 180)
+    {
+        error -= 360;
+    }
+
+    while(error < -180)
+    {
+        error += 360;
+    }
+
+    return error;
 }
 
 
 void turn_pid(int base,int target)
 {
-	 	angle.now=yaw_angle_int;
-		angle.target=target;
+		/* Wrap the control error only; preserve the IMU measurement. */
+	 	angle.now=0;
+		angle.target=yaw_error_wrap(target, yaw_angle_int);
 		pid_cal(&angle);
 		motorA.now=left_encoder;
 		motorA.target=base-angle.out;
@@ -159,7 +164,9 @@ void speed_pid(int target)
 		  pid_cal(&motorA);
 			motorB.now=right_encoder;
 		  motorB.target=target;
-		pid_cal(&motorB);
+		  pid_cal(&motorB);
+			pid_out_limit(&motorA);
+			pid_out_limit(&motorB);
 		Set_left_pwm((int)motorA.out);
 	  Set_right_pwm((int)motorB.out);
 }
