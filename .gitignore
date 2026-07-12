@@ -21,6 +21,7 @@
 *.a
 *.la
 *.lo
+!m0_sdk/source/ti/driverlib/lib/**/driverlib.a
 
 # Shared objects (inc. Windows DLLs)
 *.dll
