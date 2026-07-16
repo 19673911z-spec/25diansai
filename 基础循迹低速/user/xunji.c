@@ -10,7 +10,7 @@
 #define LINE_TURN_SLOW_ERROR   16
 #define LINE_TURN_BASE_PWM    975
 #define LINE_SHARP_ERROR       26
-#define LINE_SHARP_PWM         1650
+#define LINE_SHARP_PWM         1850  // Larger inner/outer wheel difference through right-angle turns.
 #define LINE_SHARP_LOST_PWM    2000
 #define LINE_SHARP_BRAKE_TICKS 0  // Detect a right angle and turn immediately.
 #define LINE_SHARP_EXIT_TICKS  2
