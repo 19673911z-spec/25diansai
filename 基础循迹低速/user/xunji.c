@@ -12,7 +12,7 @@
 #define LINE_SHARP_ERROR       26
 #define LINE_SHARP_PWM         1650
 #define LINE_SHARP_LOST_PWM    2000
-#define LINE_SHARP_BRAKE_TICKS 4
+#define LINE_SHARP_BRAKE_TICKS 0  // Detect a right angle and turn immediately.
 #define LINE_SHARP_EXIT_TICKS  2
 #define LINE_CROSS_CONFIRM_TICKS 3
 #define LINE_CROSS_RELEASE_TICKS 3
@@ -197,6 +197,20 @@ static void line_set_pwm(int left_target, int right_target)
     Set_right_pwm(line_drive_speed(s_line_right_pwm));
 }
 
+static void line_set_pwm_immediate(int left_target, int right_target)
+{
+#if LINE_STEER_REVERSE
+    int temp = left_target;
+    left_target = right_target;
+    right_target = temp;
+#endif
+
+    s_line_left_pwm = clamp_int(left_target, 0, LINE_PWM_LIMIT);
+    s_line_right_pwm = clamp_int(right_target, 0, LINE_PWM_LIMIT);
+    Set_left_pwm(line_drive_speed(s_line_left_pwm));
+    Set_right_pwm(line_drive_speed(s_line_right_pwm));
+}
+
 static void line_brake_control(void)
 {
     s_line_left_pwm = 0;
@@ -209,11 +223,11 @@ static void line_sharp_turn_control(int pwm)
 {
     if(s_line_sharp_state < 0)
     {
-        line_set_pwm(0, pwm);
+        line_set_pwm_immediate(0, pwm);
     }
     else if(s_line_sharp_state > 0)
     {
-        line_set_pwm(pwm, 0);
+        line_set_pwm_immediate(pwm, 0);
     }
 }
 
@@ -353,7 +367,8 @@ static void line_pwm_control(void)
         s_line_sharp_exit_ticks = 0;
         s_line_last_valid_error = raw_error;
         s_line_filter_valid = 0;
-        line_brake_control();
+        s_line_derivative_valid = 0;
+        line_sharp_turn_control(LINE_SHARP_PWM);
         return;
     }
     else if(raw_error >= LINE_SHARP_ERROR)
@@ -363,7 +378,8 @@ static void line_pwm_control(void)
         s_line_sharp_exit_ticks = 0;
         s_line_last_valid_error = raw_error;
         s_line_filter_valid = 0;
-        line_brake_control();
+        s_line_derivative_valid = 0;
+        line_sharp_turn_control(LINE_SHARP_PWM);
         return;
     }
 
