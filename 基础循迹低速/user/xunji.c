@@ -11,6 +11,7 @@
 #define LINE_TURN_BASE_PWM    975
 #define LINE_SHARP_ERROR       26
 #define LINE_SHARP_PWM         1850  // Larger inner/outer wheel difference through right-angle turns.
+#define LINE_SHARP_INNER_PWM   500
 #define LINE_SHARP_LOST_PWM    2000
 #define LINE_SHARP_BRAKE_TICKS 0  // Detect a right angle and turn immediately.
 #define LINE_SHARP_EXIT_TICKS  2
@@ -223,11 +224,11 @@ static void line_sharp_turn_control(int pwm)
 {
     if(s_line_sharp_state < 0)
     {
-        line_set_pwm_immediate(0, pwm);
+        line_set_pwm_immediate(LINE_SHARP_INNER_PWM, pwm);
     }
     else if(s_line_sharp_state > 0)
     {
-        line_set_pwm_immediate(pwm, 0);
+        line_set_pwm_immediate(pwm, LINE_SHARP_INNER_PWM);
     }
 }
 
@@ -239,11 +240,11 @@ static void line_search_control(void)
     }
     else if(s_line_sharp_state < 0 || s_line_last_error <= -LINE_SHARP_ERROR)
     {
-        line_set_pwm(0, LINE_SHARP_LOST_PWM);
+        line_set_pwm(LINE_SHARP_INNER_PWM, LINE_SHARP_LOST_PWM);
     }
     else if(s_line_sharp_state > 0 || s_line_last_error >= LINE_SHARP_ERROR)
     {
-        line_set_pwm(LINE_SHARP_LOST_PWM, 0);
+        line_set_pwm(LINE_SHARP_LOST_PWM, LINE_SHARP_INNER_PWM);
     }
     else if(s_line_last_error < 0)
     {
