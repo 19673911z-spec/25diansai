@@ -13,7 +13,8 @@
 #define LINE_SHARP_PWM         2000  // Maximum allowed outer-wheel drive through right-angle turns.
 #define LINE_SHARP_INNER_PWM   0     // Stop the inner wheel as soon as a right angle is detected.
 #define LINE_SHARP_LOST_PWM    2000
-#define LINE_SHARP_BRAKE_TICKS 0  // Detect a right angle and turn immediately.
+#define LINE_SHARP_ENTRY_OUTER_PWM 700
+#define LINE_SHARP_BRAKE_TICKS 5  // Slow entry before applying the full sharp-turn output.
 #define LINE_SHARP_EXIT_TICKS  2
 #define LINE_CROSS_CONFIRM_TICKS 3
 #define LINE_CROSS_RELEASE_TICKS 3
@@ -212,14 +213,6 @@ static void line_set_pwm_immediate(int left_target, int right_target)
     Set_right_pwm(line_drive_speed(s_line_right_pwm));
 }
 
-static void line_brake_control(void)
-{
-    s_line_left_pwm = 0;
-    s_line_right_pwm = 0;
-    Set_left_pwm(0);
-    Set_right_pwm(0);
-}
-
 static void line_sharp_turn_control(int pwm)
 {
     if(s_line_sharp_state < 0)
@@ -230,6 +223,11 @@ static void line_sharp_turn_control(int pwm)
     {
         line_set_pwm_immediate(pwm, LINE_SHARP_INNER_PWM);
     }
+}
+
+static void line_sharp_entry_control(void)
+{
+    line_sharp_turn_control(LINE_SHARP_ENTRY_OUTER_PWM);
 }
 
 static void line_search_control(void)
@@ -308,7 +306,7 @@ static void line_pwm_control(void)
         if(s_line_sharp_brake_ticks > 0)
         {
             s_line_sharp_brake_ticks--;
-            line_brake_control();
+            line_sharp_entry_control();
             return;
         }
 
@@ -369,7 +367,7 @@ static void line_pwm_control(void)
         s_line_last_valid_error = raw_error;
         s_line_filter_valid = 0;
         s_line_derivative_valid = 0;
-        line_sharp_turn_control(LINE_SHARP_PWM);
+        line_sharp_entry_control();
         return;
     }
     else if(raw_error >= LINE_SHARP_ERROR)
@@ -380,7 +378,7 @@ static void line_pwm_control(void)
         s_line_last_valid_error = raw_error;
         s_line_filter_valid = 0;
         s_line_derivative_valid = 0;
-        line_sharp_turn_control(LINE_SHARP_PWM);
+        line_sharp_entry_control();
         return;
     }
 
